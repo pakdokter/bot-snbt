@@ -11,10 +11,14 @@ from db import queries as db
 
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = InlineKeyboardMarkup([
+    user = db.get_user(update.effective_user.id)
+    baris = [
         [InlineKeyboardButton("📝 Latihan Soal", callback_data="menu:soal")],
         [InlineKeyboardButton("📚 Materi", callback_data="menu:materi")],
-    ])
+    ]
+    if user and user["role"] == "admin":
+        baris.append([InlineKeyboardButton("🛠 Manage Bot", callback_data="adm:home")])
+    kb = InlineKeyboardMarkup(baris)
     teks = "Mau latihan soal atau baca materi?"
     if update.callback_query:
         await update.callback_query.edit_message_text(teks, reply_markup=kb)
