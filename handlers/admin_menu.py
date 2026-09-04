@@ -1,8 +1,7 @@
 """Menu Manage Bot (khusus admin).
 
-Aktif sekarang : Kelola User, Statistik.
-Placeholder    : Upload, Antrian Verifikasi, Bank Soal, Kelola Materi,
-                 Kunci & Pembahasan (hidup di batch intake).
+Aktif sekarang : Upload Soal/Materi, Antrian Verifikasi, Kelola User, Statistik.
+Placeholder    : Bank Soal, Kelola Materi, Kunci & Pembahasan (batch berikutnya).
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -125,7 +124,29 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif aksi == "stat":
         await _tampil_statistik(query)
 
-    elif aksi in ("upload", "verif", "bank", "materi", "kunci"):
+    elif aksi == "upload":
+        jenis = data[2]  # 'soal' | 'materi'
+        context.user_data["upload_jenis"] = jenis
+        await query.edit_message_text(
+            f"📤 Kirim file {'soal' if jenis == 'soal' else 'materi'} sekarang "
+            "(foto, PDF, atau DOCX).\n\nKetik /batal untuk membatalkan.")
+
+    elif aksi == "verif":
+        # import lokal untuk hindari circular import (admin_verify tidak impor admin_menu)
+        from handlers.admin_verify import kb_verifikasi, ringkasan_teks
+        rows = db.list_intake_menunggu()
+        if not rows:
+            await query.answer("Tidak ada antrian menunggu verifikasi.", show_alert=True)
+        else:
+            await query.message.reply_text(f"🔎 {len(rows)} intake menunggu verifikasi:")
+            for r in rows[:10]:
+                await query.message.reply_text(
+                    ringkasan_teks(r["id"], r["klasifikasi_ai"]),
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb_verifikasi(r["id"], r["klasifikasi_ai"]),
+                )
+
+    elif aksi in ("bank", "materi", "kunci"):
         await query.answer(BELUM_AKTIF, show_alert=True)
 
     await query.answer()
