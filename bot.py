@@ -3,7 +3,7 @@ import logging
 from telegram.ext import Application
 
 from config import BOT_TOKEN
-from handlers import auth, user_menu
+from handlers import admin_menu, auth, user_menu
 
 logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO
@@ -16,6 +16,7 @@ def main():
 
     auth.register(app)
     user_menu.register(app)
+    admin_menu.register(app)
     # batch berikutnya:
     # admin_intake.register(app)
     # admin_verify.register(app)
