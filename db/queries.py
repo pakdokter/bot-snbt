@@ -102,3 +102,29 @@ def get_part(part_id: int):
         (part_id,),
         fetch="one",
     )
+
+
+# ---------- STATISTIK ----------
+
+def get_stats():
+    def satu(sql):
+        return q(sql, fetch="one")["n"]
+
+    return {
+        "user_approved":   satu("SELECT count(*) n FROM users WHERE status='approved'"),
+        "user_pending":    satu("SELECT count(*) n FROM users WHERE status='pending'"),
+        "soal_verified":   satu("SELECT count(*) n FROM soal WHERE status='verified'"),
+        "soal_tanpa_kunci":satu("SELECT count(*) n FROM soal WHERE status='verified' AND status_kunci='belum'"),
+        "jumlah_variasi":  satu("SELECT count(*) n FROM variasi"),
+        "jumlah_paket":    satu("SELECT count(*) n FROM paket"),
+        "materi_verified": satu("SELECT count(*) n FROM materi WHERE status='verified'"),
+        "soal_per_mapel": q(
+            """SELECT m.nama, count(s.id) AS jumlah
+               FROM mapel m
+               LEFT JOIN part p ON p.mapel_id = m.id
+               LEFT JOIN soal s ON s.part_id = p.id AND s.status = 'verified'
+               GROUP BY m.id, m.nama, m.urutan
+               ORDER BY m.urutan""",
+            fetch="all",
+        ),
+    }
