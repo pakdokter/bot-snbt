@@ -132,19 +132,17 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "(foto, PDF, atau DOCX).\n\nKetik /batal untuk membatalkan.")
 
     elif aksi == "verif":
-        # import lokal untuk hindari circular import (admin_verify tidak impor admin_menu)
-        from handlers.admin_verify import kb_verifikasi, ringkasan_teks
         rows = db.list_intake_menunggu()
         if not rows:
             await query.answer("Tidak ada antrian menunggu verifikasi.", show_alert=True)
         else:
             await query.message.reply_text(f"🔎 {len(rows)} intake menunggu verifikasi:")
-            for r in rows[:10]:
-                await query.message.reply_text(
-                    ringkasan_teks(r["id"], r["klasifikasi_ai"]),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=kb_verifikasi(r["id"], r["klasifikasi_ai"]),
-                )
+            for r in rows[:15]:
+                label = f"{r['jenis'].capitalize()} ({r['file_type']}) — {r['created_at']:%d %b %H:%M}"
+                kb = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("▶️ Lanjutkan", callback_data=f"ver:resume:{r['id']}"),
+                ]])
+                await query.message.reply_text(label, reply_markup=kb)
 
     elif aksi in ("bank", "materi", "kunci"):
         await query.answer(BELUM_AKTIF, show_alert=True)

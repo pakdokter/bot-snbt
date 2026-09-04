@@ -169,6 +169,20 @@ def list_intake_menunggu():
     )
 
 
+def count_soal_by_intake(intake_id: int):
+    return q(
+        """SELECT m.nama AS mapel_nama, p.nama AS part_nama, count(s.id) AS jumlah
+           FROM soal s
+           JOIN part p ON p.id = s.part_id
+           JOIN mapel m ON m.id = p.mapel_id
+           WHERE s.intake_id = %s
+           GROUP BY m.id, m.nama, p.id, p.nama, m.urutan, p.urutan
+           ORDER BY m.urutan, p.urutan""",
+        (intake_id,),
+        fetch="all",
+    )
+
+
 # ---------- TAKSONOMI: lookup by kode ----------
 
 def find_mapel_by_kode(kode: str):

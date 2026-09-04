@@ -1,17 +1,16 @@
 """Terima file dari admin (dipicu setelah admin menekan tombol Upload Soal/
 Upload Materi di Manage Bot, yang menyetel context.user_data['upload_jenis']),
-ekstrak teksnya, klasifikasikan, lalu serahkan ke admin_verify untuk
-ditampilkan sebagai kartu verifikasi.
+OCR/ekstrak teksnya (tanpa AI, lihat services/extract.py), lalu serahkan ke
+admin_verify untuk dipilih mapel/part-nya secara manual.
 """
 
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.ext import CommandHandler, ContextTypes, MessageHandler, filters
 
 from db import queries as db
-from handlers.admin_verify import kb_verifikasi, ringkasan_teks
+from handlers.admin_verify import kb_mode_split, tampil_pilih_mapel
 from handlers.auth import is_admin
-from services import classify, extract
+from services import extract, parse_soal
 
 
 async def batal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,7 +31,6 @@ async def terima_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_type = "foto"
         tg_file = await msg.photo[-1].get_file()
         file_id_tg = msg.photo[-1].file_id
-        media_type = "image/jpeg"
     elif msg.document:
         nama = (msg.document.file_name or "").lower()
         if nama.endswith(".pdf"):
@@ -46,18 +44,17 @@ async def terima_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         tg_file = await msg.document.get_file()
         file_id_tg = msg.document.file_id
-        media_type = "image/png" if nama.endswith(".png") else "image/jpeg"
     else:
         return
 
-    status_msg = await msg.reply_text("⏳ Mengunduh & mengekstrak teks...")
+    status_msg = await msg.reply_text("⏳ Mengunduh & OCR (bisa 10-30 detik untuk file besar)...")
     file_bytes = bytes(await tg_file.download_as_bytearray())
 
     intake = db.create_intake(update.effective_user.id, jenis, file_type, file_id_tg)
 
     try:
         if file_type == "foto":
-            raw_text = extract.extract_from_image(file_bytes, media_type)
+            raw_text = extract.extract_from_image_bytes(file_bytes)
         elif file_type == "pdf":
             raw_text = extract.extract_from_pdf(file_bytes)
         else:
@@ -68,27 +65,32 @@ async def terima_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not raw_text.strip():
-        await status_msg.edit_text("❌ Tidak ada teks yang terbaca dari file ini.")
+        await status_msg.edit_text(
+            "❌ Tidak ada teks yang terbaca dari file ini. Kalau ini scan tulisan "
+            "tangan atau kualitas foto buram, OCR gratis (Tesseract) sering gagal baca — "
+            "coba foto ulang lebih jelas, atau ketik manual.")
         db.update_intake_status(intake["id"], "ditolak")
         return
 
     db.update_intake_raw(intake["id"], raw_text)
-    await status_msg.edit_text("⏳ Mengklasifikasikan...")
 
-    try:
-        hasil = classify.klasifikasi(jenis, raw_text)
-    except Exception as e:
-        await status_msg.edit_text(f"❌ Gagal klasifikasi: {e}")
-        db.update_intake_status(intake["id"], "ditolak")
+    if jenis == "materi":
+        db.update_intake_klasifikasi(intake["id"], {}, "manual", "menunggu_admin")
+        await status_msg.edit_text("📚 Teks berhasil diekstrak.")
+        await tampil_pilih_mapel(status_msg, intake["id"], "materi", 0,
+                                  f"Panjang teks: {len(raw_text)} karakter.")
         return
 
-    tipe_sumber = hasil.get("tipe_sumber", "per_part")
-    db.update_intake_klasifikasi(intake["id"], hasil, tipe_sumber, "menunggu_admin")
-
+    # jenis soal: pecah berdasarkan pola penomoran
+    potongan = parse_soal.split_soal(raw_text)
+    db.update_intake_klasifikasi(intake["id"], {"potongan": potongan}, "manual", "menunggu_admin")
     await status_msg.edit_text(
-        ringkasan_teks(intake["id"], hasil),
-        parse_mode=ParseMode.HTML,
-        reply_markup=kb_verifikasi(intake["id"], hasil),
+        f"📄 Teks diekstrak. Terdeteksi <b>{len(potongan)} soal</b> berdasarkan pola "
+        "penomoran. Kalau jumlah ini kelihatan salah (misal soal tidak diberi nomor "
+        "di naskah aslinya), semua tetap bisa disimpan sebagai satu blok.\n\n"
+        "Semua soal ini dari bagian yang sama?",
+        parse_mode="HTML",
+        reply_markup=kb_mode_split(intake["id"], len(potongan)),
     )
 
 
