@@ -1,3 +1,4 @@
+import json
 from contextlib import contextmanager
 
 from psycopg2.extras import RealDictCursor
@@ -128,3 +129,98 @@ def get_stats():
             fetch="all",
         ),
     }
+
+
+# ---------- INTAKE ----------
+
+def create_intake(uploaded_by_tid: int, jenis: str, file_type: str, file_id_tg: str):
+    return q(
+        """INSERT INTO intake (uploaded_by, jenis, file_type, file_id_tg, status)
+           VALUES ((SELECT id FROM users WHERE telegram_id = %s), %s, %s, %s, 'extracting')
+           RETURNING *""",
+        (uploaded_by_tid, jenis, file_type, file_id_tg),
+        fetch="one",
+    )
+
+
+def update_intake_raw(intake_id: int, raw_text: str):
+    q("UPDATE intake SET raw_text = %s WHERE id = %s", (raw_text, intake_id))
+
+
+def update_intake_klasifikasi(intake_id: int, klasifikasi: dict, tipe_sumber: str, status: str):
+    q(
+        "UPDATE intake SET klasifikasi_ai = %s, tipe_sumber = %s, status = %s WHERE id = %s",
+        (json.dumps(klasifikasi), tipe_sumber, status, intake_id),
+    )
+
+
+def update_intake_status(intake_id: int, status: str):
+    q("UPDATE intake SET status = %s WHERE id = %s", (status, intake_id))
+
+
+def get_intake(intake_id: int):
+    return q("SELECT * FROM intake WHERE id = %s", (intake_id,), fetch="one")
+
+
+def list_intake_menunggu():
+    return q(
+        "SELECT * FROM intake WHERE status = 'menunggu_admin' ORDER BY created_at",
+        fetch="all",
+    )
+
+
+# ---------- TAKSONOMI: lookup by kode ----------
+
+def find_mapel_by_kode(kode: str):
+    return q("SELECT * FROM mapel WHERE kode = %s", (kode,), fetch="one")
+
+
+def find_part_by_kode(mapel_id: int, part_kode: str):
+    return q(
+        "SELECT * FROM part WHERE mapel_id = %s AND kode = %s",
+        (mapel_id, part_kode),
+        fetch="one",
+    )
+
+
+# ---------- SOAL ----------
+
+def next_seq_soal(part_id: int) -> int:
+    return q("SELECT count(*) n FROM soal WHERE part_id = %s", (part_id,), fetch="one")["n"] + 1
+
+
+def insert_soal(kode, part_id, intake_id, teks_soal, opsi, kunci, status, verified_by_tid=None):
+    return q(
+        """INSERT INTO soal (kode, part_id, intake_id, teks_soal, opsi, kunci,
+                             status, status_kunci, verified_by)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                   (SELECT id FROM users WHERE telegram_id = %s))
+           RETURNING *""",
+        (kode, part_id, intake_id, teks_soal, json.dumps(opsi) if opsi else None,
+         kunci, status, "draft_ai" if kunci else "belum", verified_by_tid),
+        fetch="one",
+    )
+
+
+def set_soal_google_doc(soal_id, doc_id):
+    q("UPDATE soal SET google_doc_id = %s WHERE id = %s", (doc_id, soal_id))
+
+
+# ---------- MATERI ----------
+
+def next_seq_materi(part_id: int) -> int:
+    return q("SELECT count(*) n FROM materi WHERE part_id = %s", (part_id,), fetch="one")["n"] + 1
+
+
+def insert_materi(kode, part_id, intake_id, judul, konten, status, verified_by_tid=None):
+    return q(
+        """INSERT INTO materi (kode, part_id, intake_id, judul, konten, status, verified_by)
+           VALUES (%s, %s, %s, %s, %s, %s, (SELECT id FROM users WHERE telegram_id = %s))
+           RETURNING *""",
+        (kode, part_id, intake_id, judul, konten, status, verified_by_tid),
+        fetch="one",
+    )
+
+
+def set_materi_google_doc(materi_id, doc_id):
+    q("UPDATE materi SET google_doc_id = %s WHERE id = %s", (doc_id, materi_id))
